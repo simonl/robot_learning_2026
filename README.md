@@ -1,7 +1,4 @@
-[![Open mini-grp In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://githubtocolab.com/milarobotlearningcourse/mini-grp/blob/main/mini-grp.ipynb)
-[![Open mini-crossfomer In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://githubtocolab.com/milarobotlearningcourse/mini_crossformer/blob/main/mini_crossformer.ipynb)
-
-# Mini GRP: Mini- Generalist Robotics Policy
+# Homework Assignments for the Mila Robot Learning Course
 
 Minimialist reimplimentation of the Octo Generalist Robotics Policy.
 
