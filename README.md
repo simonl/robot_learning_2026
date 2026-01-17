@@ -9,8 +9,8 @@ Minimialist reimplimentation of the Octo Generalist Robotics Policy.
 
 '''module load cudatoolkit/11.8 miniconda/3'''
 
-conda create -n mini-grp python=3.10
-conda activate mini-grp
+conda create -n roble python=3.10
+conda activate roble
 pip install -r requirements.txt
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
@@ -73,12 +73,7 @@ https://github.com/Lifelong-Robot-Learning/LIBERO
 Basic example to train the GRP over the bridge dataset 
 
 ```
-python mini-grp.py
-```
-
-Launch multiple jobs on a slurm cluster to evalute different model architectures, etc.
-```
-python mini-grp.py --multirun gradient_accumulation_steps=1,2,4 hydra/launcher=submitit_slurm
+python mini-grp/mini-grp.py
 ```
 
 ## Docker
@@ -86,12 +81,12 @@ python mini-grp.py --multirun gradient_accumulation_steps=1,2,4 hydra/launcher=s
 The Dockerfile contains the setup to run the provided environment in a containter for better portabilty.
 
 ```
-docker build -t gberseth/mini_grp:latest .
+docker build -t gberseth/roble:latest .
 ```
-Run in docker
+Run in docker (settings for low memory use)
 
 ```
-docker run --gpus=all gberseth/mini_grp:latest python mini-grp/mini_grp.py dataset.buffer_size=1000 trim=1000 n_embd=256 batch_size=64 dataset.encode_with_t5=false data_shuffel_interval=10 eval_interval=10 dataset.num_episodes=1 dataset.chunk_size=1
+docker run --gpus=all gberseth/roble:latest python mini-grp/mini_grp.py dataset.buffer_size=1000 trim=1000 n_embd=256 batch_size=64 dataset.encode_with_t5=false data_shuffel_interval=10 eval_interval=10 dataset.num_episodes=1 dataset.chunk_size=1
 ```
 
 ### Mila Code

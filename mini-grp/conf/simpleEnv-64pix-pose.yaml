@@ -1,0 +1,71 @@
+defaults:
+  - dataset: fast
+
+
+experiment:
+  name: mini_grp
+  project: mini-grp
+  description: "simple env with 64pix images and pose data"
+  
+batch_size: 256 # how many independent sequences will we process in parallel?
+max_block_size: 12 ## Will be overidden by code
+vocab_size: 32 ## Will be overidden by code
+n_patches: 8
+patch_size: 8
+max_iters: 100000
+eval_interval: 100 # How often to run eval over the validation set
+learning_rate: 3e-4
+eval_iters: 200
+policy:
+  action_stacking: 1
+  obs_stacking: 2
+  use_image_augmentations: true
+  dtype: 'float32'
+  use_pose_data: 1
+
+testing: false
+eval_vid_iters: 2500
+gradient_accumulation_steps: 1
+
+simEval: ["simple_env"] # "simpler_env" or "libero"
+sim:
+  eval_episodes: 5
+  eval_tasks: [9, 24, 30, 69]
+  episode length: 500
+
+# ------------
+
+r_seed: 1337
+device: "cuda"
+n_embd: 128
+n_head: 16
+n_blocks: 4
+dropout: 0.2
+action_dim: 7
+load_action_bounds: true
+env:
+  "action_std": [
+      0.012801983393728733,
+      0.019161013886332512,
+      0.016479915007948875,
+      0.03680804371833801,
+      0.03882618248462677,
+      0.07129465043544769,
+      0.580714762210846
+    ]
+  "action_mean": [
+      0.0006368956528604031,
+      9.940937889041379e-05,
+      0.00018578088202048093,
+      -0.00014738106983713806,
+      -0.00243544764816761,
+      0.0003118338354397565,
+      0.625765860080719
+    ]
+  gripper_closed_std: 1.0
+
+## Model hyperparameters
+image_shape: [64, 64, 3]
+data_shuffel_interval: 1000 ## How often to reshuffle the data buffer, grabbing new random sequences from the cloud.
+  
+trim: 1000000
