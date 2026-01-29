@@ -18,6 +18,7 @@ pip install -U wandb
 
 # Update .bashrc to activate virtual environment on login
 echo 'cd /root/robot_learning_2026/' >> ~/.bashrc
+echo 'source .venv/bin/activate' >> ~/.bashrc
 echo './activate.sh' >> ~/.bashrc
 
 # Configure git user information
