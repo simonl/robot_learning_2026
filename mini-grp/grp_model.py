@@ -128,11 +128,11 @@ class GRP(nn.Module):
             self.pose_embedding = nn.Linear(cfg.policy.pose_dim if hasattr(cfg.policy, 'pose_dim') else 7, cfg.n_embd)
         
         # 6) Transformer encoder blocks
-        self.blocks = nn.Sequential(*[Block(cfg.n_embd, cfg.n_head, mlp_ratio, cfg.dropout) for _ in range(cfg.n_layer)])
+        self.blocks = nn.Sequential(*[Block(cfg.n_embd, cfg.n_head, mlp_ratio, cfg.dropout) for _ in range(cfg.n_blocks)])
         self.ln_f = nn.LayerNorm(cfg.n_embd)
 
         # 7) Action prediction head (MLP)
-        action_dim = cfg.policy.action_dim
+        action_dim = cfg.action_dim
         if hasattr(cfg.policy, 'action_stacking'):
             action_dim *= cfg.policy.action_stacking
         self.action_head = nn.Sequential(
@@ -333,8 +333,8 @@ class GRP(nn.Module):
         """
         import torch as _torch
         ## The action tensor is of shape (batch_size, action_dim * action_stacking) so we need to repeat the mean and std per action stacking
-        action_mean = _torch.tensor(np.repeat(self._cfg.env.action_mean, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
-        action_std = _torch.tensor(np.repeat(self._cfg.env.action_std, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
+        action_mean = _torch.tensor(np.repeat(self._cfg.dataset.action_mean, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
+        action_std = _torch.tensor(np.repeat(self._cfg.dataset.action_std, self._cfg.policy.action_stacking), dtype=action_tensor.dtype, device=action_tensor.device)
         return (action_tensor * action_std) + action_mean
     
     def encode_action(self, action_float):
@@ -346,8 +346,8 @@ class GRP(nn.Module):
         self._encode_action = lambda af:   (af - action_mean)/(action_std) # encoder: take a float, output an integer
         """
         import torch as _torch
-        action_mean = _torch.tensor(self._cfg.env.action_mean, dtype=action_float.dtype, device=action_float.device)
-        action_std = _torch.tensor(self._cfg.env.action_std, dtype=action_float.dtype, device=action_float.device)
+        action_mean = _torch.tensor(self._cfg.dataset.action_mean, dtype=action_float.dtype, device=action_float.device)
+        action_std = _torch.tensor(self._cfg.dataset.action_std, dtype=action_float.dtype, device=action_float.device)
         return (action_float - action_mean) / action_std
 
 
