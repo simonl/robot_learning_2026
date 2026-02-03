@@ -362,13 +362,15 @@ class CircularBuffer:
         x_goal_img = self._model.normalize_state(transform_crop_scale(data["goal_img"][ix].to(torch.float))) ## [B, C, H,  W]
         x_goal_img = x_goal_img # Convert to [B, H, W, C] format from torchvision.
     
-        # TODO: 
-        ## Provide the block masking logic for the attention head
-        y = 0 ## discrete or continuous actions
+        # Prepare target actions (continuous or discrete)
+        # Start with the first action at index ix
+        y = self._model.encode_action(data["action"][ix])  # (B, action_dim)
+        
         if cfg.policy.action_stacking > 1:
-            ## Stack the next cfg.policy.action_stacking actions together
-            for i in range(1, cfg.policy.action_stacking): ## This is slow but works.
-                y = torch.cat((y, self._model.encode_action(data["action"][ix + i])), axis=1) ## stack on time timension.
+            ## Stack the next cfg.policy.action_stacking-1 actions together for temporal action chunking
+            for i in range(1, cfg.policy.action_stacking):
+                next_action = self._model.encode_action(data["action"][ix + i])
+                y = torch.cat((y, next_action), dim=1)  # Concatenate along action dimension
         
         return x, pose, x_goal, x_goal_img, y
     

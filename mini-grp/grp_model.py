@@ -36,16 +36,18 @@ class Head(nn.Module):
 
     def forward(self, x, mask=None):
         B,T,C = x.shape
-        # TODO: 
-        ## Provide the block masking logic for the attention head
-        k = self.key(x)
-        q = self.query(x)
-        wei = q @ k.transpose(-2,-1) * C**-0.5
-        wei = wei.masked_fill(mask == 0, float('-inf'))
+        # Compute attention scores
+        k = self.key(x)   # (B, T, head_size)
+        q = self.query(x) # (B, T, head_size)
+        # Scaled dot-product attention
+        wei = q @ k.transpose(-2,-1) * C**-0.5  # (B, T, T)
+        # Apply mask if provided (for block attention)
+        if mask is not None:
+            wei = wei.masked_fill(mask == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
         wei = self.dropout(wei)
-        v = self.value(x)
-        out = wei @ v
+        v = self.value(x)  # (B, T, head_size)
+        out = wei @ v      # (B, T, head_size)
         return out
 
 
@@ -98,12 +100,48 @@ class GRP(nn.Module):
         self._cfg = cfg
         chars = cfg.dataset.chars_list
         cfg.vocab_size = len(chars)
-        # TODO: 
-        ## Provide the logic for the GRP network
+        # 1) Patch embedding projection
+        patch_dim = (cfg.patch_size ** 2) * 3  # For RGB images
+        if cfg.policy.obs_stacking > 1:
+            patch_dim = (cfg.patch_size ** 2) * 3  # Still 3 channels per patch
+        self.patch_embedding = nn.Linear(patch_dim, cfg.n_embd)
+        
+        # 2) Token embeddings for language (if not using T5)
+        if not cfg.dataset.encode_with_t5:
+            self.token_embedding_table = nn.Embedding(cfg.vocab_size, cfg.n_embd)
+        
+        # 3) Special tokens: [CLS] token for classification
+        self.cls_token = nn.Parameter(torch.randn(1, 1, cfg.n_embd))
+        self.goal_img_token = nn.Parameter(torch.randn(1, 1, cfg.n_embd))
+        
+        # 4) Positional embeddings
+        # Max sequence length: CLS + obs patches + goal patches + language tokens + pose
+        n_patches = (cfg.image_shape[0] // cfg.patch_size) * (cfg.image_shape[1] // cfg.patch_size)
+        if cfg.policy.obs_stacking > 1:
+            n_patches *= cfg.policy.obs_stacking
+        n_goal_patches = (cfg.image_shape[0] // cfg.patch_size) * (cfg.image_shape[1] // cfg.patch_size)
+        max_seq_len = 1 + n_patches + n_goal_patches + cfg.max_block_size + 1  # +1 for pose if used
+        self.position_embedding_table = nn.Embedding(max_seq_len, cfg.n_embd)
+        
+        # 5) Pose embedding (optional)
+        if hasattr(cfg, 'use_pose') and cfg.use_pose:
+            self.pose_embedding = nn.Linear(cfg.policy.pose_dim if hasattr(cfg.policy, 'pose_dim') else 7, cfg.n_embd)
+        
+        # 6) Transformer encoder blocks
+        self.blocks = nn.Sequential(*[Block(cfg.n_embd, cfg.n_head, mlp_ratio, cfg.dropout) for _ in range(cfg.n_layer)])
+        self.ln_f = nn.LayerNorm(cfg.n_embd)
 
-        # 4) Transformer encoder blocks
-
-        # 5) Classification MLPk
+        # 7) Action prediction head (MLP)
+        action_dim = cfg.policy.action_dim
+        if hasattr(cfg.policy, 'action_stacking'):
+            action_dim *= cfg.policy.action_stacking
+        self.action_head = nn.Sequential(
+            nn.Linear(cfg.n_embd, 4 * cfg.n_embd),
+            nn.ReLU(),
+            nn.Linear(4 * cfg.n_embd, action_dim)
+        )
+        
+        self.apply(self._init_weights)
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -125,22 +163,89 @@ class GRP(nn.Module):
             B, E = goals_txt.shape
             T = self._cfg.max_block_size
 
-        # TODO: 
-        ## Provide the logic to produce the output and loss for the GRP
+        # 1) Map patches to embedding dimension
+        tok_obs = self.patch_embedding(obs_patches)  # (B, n_patches, n_embd)
+        tok_goal = self.patch_embedding(patches_g)   # (B, n_goal_patches, n_embd)
         
-        # Map the vector corresponding to each patch to the hidden size dimension
-
-        # Adding classification and goal_img tokens to the tokens
-
-        # Adding positional embedding
-
-        # Compute blocked masks
-
-        # Transformer Blocks
-
-        # Getting the classification token only
-
-        # Compute output and loss
+        # 2) Process language tokens
+        if self._cfg.dataset.encode_with_t5:
+            tok_lang = goals_e  # Already embedded from T5: (B, T, n_embd)
+        else:
+            tok_lang = goals_e  # Character embeddings: (B, T, n_embd)
+        
+        # 3) Process pose if available
+        if pose is not None and hasattr(self, 'pose_embedding'):
+            tok_pose = self.pose_embedding(pose)  # (B, pose_dim) -> (B, 1, n_embd)
+            if len(tok_pose.shape) == 2:
+                tok_pose = tok_pose.unsqueeze(1)
+        else:
+            tok_pose = None
+        
+        # 4) Add CLS and goal image tokens
+        cls_tokens = self.cls_token.expand(B, -1, -1)  # (B, 1, n_embd)
+        goal_img_tokens = self.goal_img_token.expand(B, -1, -1)  # (B, 1, n_embd)
+        
+        # 5) Concatenate all tokens: [CLS, obs_patches, goal_img_token, goal_patches, lang_tokens, pose]
+        token_list = [cls_tokens, tok_obs, goal_img_tokens, tok_goal, tok_lang]
+        if tok_pose is not None:
+            token_list.append(tok_pose)
+        x = torch.cat(token_list, dim=1)  # (B, total_seq_len, n_embd)
+        
+        # 6) Add positional embeddings
+        seq_len = x.shape[1]
+        pos_emb = self.position_embedding_table(torch.arange(seq_len, device=x.device))  # (seq_len, n_embd)
+        x = x + pos_emb.unsqueeze(0)  # (B, seq_len, n_embd)
+        
+        # 7) Create block attention mask
+        # Allow: CLS attends to all, obs attends to obs+lang+goal, goal attends to goal+lang, lang attends within lang
+        mask = torch.ones((seq_len, seq_len), device=x.device)
+        if mask_ or self._cfg.use_block_mask:
+            # CLS token can attend to everything (first row already all 1s)
+            # Set up block diagonal structure for efficiency
+            n_obs = tok_obs.shape[1]
+            n_goal_token = 1
+            n_goal_patches = tok_goal.shape[1]
+            n_lang = tok_lang.shape[1]
+            
+            # Define block boundaries
+            idx = 1  # After CLS
+            obs_start, obs_end = idx, idx + n_obs
+            idx = obs_end
+            goal_token_idx = idx
+            idx += n_goal_token
+            goal_start, goal_end = idx, idx + n_goal_patches
+            idx = goal_end
+            lang_start, lang_end = idx, idx + n_lang
+            
+            # Observation patches attend to: themselves, language, goal token, goal patches
+            mask[obs_start:obs_end, obs_start:obs_end] = 1  # obs to obs
+            mask[obs_start:obs_end, goal_token_idx:goal_end] = 1  # obs to goal token + patches
+            mask[obs_start:obs_end, lang_start:lang_end] = 1  # obs to lang
+            
+            # Goal patches attend to: themselves, language, goal token
+            mask[goal_start:goal_end, goal_token_idx:goal_end] = 1  # goal to goal
+            mask[goal_start:goal_end, lang_start:lang_end] = 1  # goal to lang
+            
+            # Language tokens attend to themselves
+            mask[lang_start:lang_end, lang_start:lang_end] = 1
+        
+        mask = mask.unsqueeze(0)  # (1, seq_len, seq_len)
+        
+        # 8) Pass through transformer blocks
+        x = self.blocks(x)  # (B, seq_len, n_embd)
+        x = self.ln_f(x)    # (B, seq_len, n_embd)
+        
+        # 9) Extract CLS token for action prediction
+        cls_output = x[:, 0, :]  # (B, n_embd)
+        
+        # 10) Predict actions
+        out = self.action_head(cls_output)  # (B, action_dim)
+        
+        # 11) Compute loss
+        loss = None
+        if targets is not None:
+            loss = F.mse_loss(out, targets)
+        
         return (out, loss)
     
     def resize_image(self, image):
@@ -186,9 +291,12 @@ class GRP(nn.Module):
         if self._cfg.dataset.encode_with_t5:
             if tokenizer is None or text_model is None:
                 raise ValueError("tokenizer and text_model must be provided when using T5 encoding")
-            # TODO:    
-            ## Provide the logic converting text goal to T5 embedding tensor
-            pass
+            # Tokenize and encode the text goal using T5
+            input_ids = tokenizer(goal, return_tensors="pt", padding="max_length", 
+                                 max_length=self._cfg.max_block_size, truncation=True).input_ids.to(self._cfg.device)
+            with _torch.no_grad():
+                goal_embedding = text_model.encoder(input_ids).last_hidden_state  # (1, seq_len, n_embd)
+            return goal_embedding
         else:
             pad = " " * self._cfg.max_block_size
             goal_ = goal[:self._cfg.max_block_size] + pad[len(goal):self._cfg.max_block_size]
