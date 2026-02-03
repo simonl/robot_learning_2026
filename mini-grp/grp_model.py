@@ -64,12 +64,12 @@ class MultiHeadAttention(nn.Module):
 
 
 class FeedFoward(nn.Module):
-    def __init__(self, n_embd, dropout):
+    def __init__(self, n_embd, mlp_ratio, dropout):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embd, 4 * n_embd),
+            nn.Linear(n_embd, mlp_ratio * n_embd),
             nn.ReLU(),
-            nn.Linear(4 * n_embd, n_embd),
+            nn.Linear(mlp_ratio * n_embd, n_embd),
             nn.Dropout(dropout),
         )
 
@@ -78,11 +78,11 @@ class FeedFoward(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, n_embd, n_head, dropout):
+    def __init__(self, n_embd, n_head, mlp_ratio, dropout):
         super().__init__()
         head_size = n_embd // n_head
         self.sa = MultiHeadAttention(n_head, head_size, n_embd=n_embd, dropout=dropout)
-        self.ffwd = FeedFoward(n_embd, dropout)
+        self.ffwd = FeedFoward(n_embd, mlp_ratio, dropout)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 

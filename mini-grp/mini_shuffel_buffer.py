@@ -256,7 +256,6 @@ class CircularBuffer:
         elif self._cfg.dataset.load_dataset == "skip":
             pass
         else:
-            
             get_multi_dataset_portion(self._builders, self, self._cfg)
             print("Time to load full dataset:", time.time() - start_)
 
