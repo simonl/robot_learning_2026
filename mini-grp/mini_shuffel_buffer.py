@@ -203,8 +203,17 @@ class CircularBuffer:
         self._builders = {}
         if self._cfg.dataset.num_episodes > 0:
             for dataset_name in self._cfg.dataset.dataset_indicies:
-                self._builders[dataset_name] = tfds.builder_from_directory(builder_dir=dataset_name)
-                print("dataset size:", self._builders[dataset_name].info.splits["train"].num_examples)
+                # Check if dataset directory exists before loading
+                if not os.path.exists(dataset_name):
+                    print(f"Warning: Dataset directory does not exist: {dataset_name}")
+                    print(f"Skipping dataset: {dataset_name}")
+                    continue
+                try:
+                    self._builders[dataset_name] = tfds.builder_from_directory(builder_dir=dataset_name)
+                    print("dataset size:", self._builders[dataset_name].info.splits["train"].num_examples)
+                except Exception as e:
+                    print(f"Error loading dataset {dataset_name}: {e}")
+                    print(f"Skipping dataset: {dataset_name}")
 
         chars = cfg.dataset.chars_list
         cfg.vocab_size = len(chars)
